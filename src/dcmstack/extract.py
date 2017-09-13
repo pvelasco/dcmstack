@@ -6,6 +6,7 @@ from collections import namedtuple, defaultdict
 import dicom
 from dicom.datadict import keyword_for_tag
 from nibabel.nicom import csareader
+import sys
 from .dcmstack import DicomStack
 try:
     from collections import OrderedDict
