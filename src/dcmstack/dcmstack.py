@@ -156,7 +156,11 @@ def axcodes2ornt(axcodes, labels=None):
     """
 
     if labels is None:
-        labels = zip('LPI', 'RAS')
+        # PV: in Python 3.X, when you iterate through a zip object
+        #     you move along it, so you need this hack, to turn
+        #     "labels" into a list:
+        #labels = zip('LPI', 'RAS')
+        labels = list(zip('LPI', 'RAS'))
 
     n_axes = len(axcodes)
     ornt = np.ones((n_axes, 2), dtype=np.int8) * np.nan
@@ -674,7 +678,7 @@ class DicomStack(object):
         if len(self._files_info) % files_per_vol != 0:
             raise InvalidStackError("Number of files is not an even multiple "
                                     "of the number of unique slice positions.")
-        num_volumes = len(self._files_info) / files_per_vol
+        num_volumes = len(self._files_info) // files_per_vol
 
         #Figure out the number of vector components and time points
         num_vec_comps = len(self._vector_vals)
@@ -683,7 +687,7 @@ class DicomStack(object):
         if num_volumes % num_vec_comps != 0:
             raise InvalidStackError("Number of volumes not an even multiple "
                                     "of the number of vector components.")
-        num_time_points = num_volumes / num_vec_comps
+        num_time_points = num_volumes // num_vec_comps
 
         #If both sort keys are None try to guess
         if (num_volumes > 1 and self._time_order is None and
@@ -777,7 +781,7 @@ class DicomStack(object):
             n_vols *= stack_shape[3]
         if len(stack_shape) > 4:
             n_vols *= stack_shape[4]
-        files_per_vol = len(self._files_info) / n_vols
+        files_per_vol = len(self._files_info) // n_vols
         file_shape = self._files_info[0][0].nii_img.get_shape()
         for vec_idx in range(stack_shape[4]):
             for time_idx in range(stack_shape[3]):
@@ -822,7 +826,7 @@ class DicomStack(object):
             n_vols *= shape[4]
 
         #Figure out the number of files in each volume
-        files_per_vol = len(self._files_info) / n_vols
+        files_per_vol = len(self._files_info) // n_vols
 
         #Pull the DICOM Patient Space affine from the first input
         aff = self._files_info[0][0].nii_img.get_affine()
@@ -865,7 +869,7 @@ class DicomStack(object):
         if len(data.shape) > 4:
             n_vols *= data.shape[4]
 
-        files_per_vol = len(self._files_info) / n_vols
+        files_per_vol = len(self._files_info) // n_vols
 
         #Reorder the voxel data if requested
         permutation = [0, 1, 2]
@@ -876,7 +880,11 @@ class DicomStack(object):
              affine,
              reorient_transform,
              ornt_trans) = reorder_voxels(data, affine, voxel_order)
-            permutation, flips = zip(*ornt_trans)
+            # PV: in Python 3.X, when you iterate through a zip object
+            #     you move along it, so you need this hack, to turn
+            #     "labels" into a list:
+            #permutation, flips = zip(*ornt_trans)
+            permutation, flips = list(zip(*ornt_trans))
             permutation = [int(val) for val in permutation]
 
             #Reverse file order in each volume's files if we flipped slice order
@@ -982,6 +990,7 @@ class DicomStack(object):
                 meta_ext = DcmMetaExtension.from_sequence(vol_meta, 3)
             else:
                 meta_ext = vol_meta[0]
+                file_info = self._files_info[0]
                 if meta_ext is file_info[0].meta_ext:
                     meta_ext = deepcopy(meta_ext)
 
@@ -1058,6 +1067,9 @@ def parse_and_group(src_paths, group_by=default_group_keys, extractor=None,
                 continue
             else:
                 raise
+        for elem in dcm:
+            if 'or' in elem.VR:
+                elem = correct_ambiguous_vr_element(elem, dcm, True)
 
         #Extract the meta data and group
         meta = extractor(dcm)
@@ -1092,7 +1104,8 @@ def parse_and_group(src_paths, group_by=default_group_keys, extractor=None,
 
     # Unpack sub results, using the canonical value for the close keys
     full_results = {}
-    for eq_key, sub_res_list in results.iteritems():
+    #for eq_key, sub_res_list in results.iteritems():
+    for eq_key, sub_res_list in results.items():
         for close_key, sub_res in sub_res_list:
             full_key = []
             eq_idx = 0
@@ -1157,7 +1170,113 @@ def parse_and_stack(src_paths, group_by=default_group_keys, extractor=None,
                               force,
                               warn_on_except)
 
-    for key, group in results.iteritems():
+    #for key, group in results.iteritems():
+    for key, group in results.items():
         results[key] = stack_group(group, warn_on_except, **stack_args)
 
     return results
+
+  
+###################################################
+## PV:
+## Note: this is part of pydicom, but is not included in
+##       the latest tag (0.9.9).  So just add the call here
+###################################################
+  
+def correct_ambiguous_vr_element(elem, ds, is_little_endian):
+    """Attempt to correct the ambiguous VR element `elem`.
+    When it's not possible to correct the VR, the element will be returned
+    unchanged. Currently the only ambiguous VR elements not corrected for are
+    all retired or part of DICONDE.
+    If the VR is corrected and is 'US' or 'SS' then the value will be updated
+    using the pydicom.values.convert_numbers() method.
+    Parameters
+    ----------
+    elem : pydicom.dataelem.DataElement
+        The element with an ambiguous VR.
+    ds : pydicom.dataset.Dataset
+        The dataset containing `elem`.
+    is_little_endian : bool
+        The byte ordering of the values in the dataset.
+    Returns
+    -------
+    elem : pydicom.dataelem.DataElement
+        The corrected element
+    """
+    if 'or' in elem.VR:
+        # 'OB or OW': 7fe0,0010 PixelData
+        if elem.tag == 0x7fe00010:
+
+            try:
+                # Compressed Pixel Data
+                # PS3.5 Annex A.4
+                #   If encapsulated, VR is OB and length is undefined
+                if elem.is_undefined_length:
+                    elem.VR = 'OB'
+                else:
+                    # Non-compressed Pixel Data
+                    # If BitsAllocated is > 8 then OW, else may be OB or OW
+                    #   as per PS3.5 Annex A.2. For BitsAllocated < 8 test the
+                    #    size of each pixel to see if its written in OW or OB
+                    if ds.BitsAllocated > 8:
+                        elem.VR = 'OW'
+                    else:
+                        if len(ds.PixelData) // (ds.Rows * ds.Columns) == 2:
+                            elem.VR = 'OW'
+                        elif len(ds.PixelData) // (ds.Rows * ds.Columns) == 1:
+                            elem.VR = 'OB'
+            except AttributeError:
+                pass
+
+        # 'US or SS' and dependent on PixelRepresentation
+        elif elem.tag in [
+                0x00189810, 0x00221452, 0x00280104, 0x00280105, 0x00280106,
+                0x00280107, 0x00280108, 0x00280109, 0x00280110, 0x00280111,
+                0x00280120, 0x00280121, 0x00281101, 0x00281102, 0x00281103,
+                0x00283002, 0x00409211, 0x00409216, 0x00603004, 0x00603006
+        ]:
+            # US if PixelRepresenation value is 0x0000, else SS
+            #   For references, see the list at
+            #   https://github.com/darcymason/pydicom/pull/298
+            if 'PixelRepresentation' in ds:
+                if ds.PixelRepresentation == 0:
+                    elem.VR = 'US'
+                    byte_type = 'H'
+                else:
+                    elem.VR = 'SS'
+                    byte_type = 'h'
+                from dicom.values import convert_numbers
+                elem.value = convert_numbers(elem.value, is_little_endian,
+                                             byte_type)
+
+        # 'OB or OW' and dependent on WaveformBitsAllocated
+        elif elem.tag in [0x54000100, 0x54000112, 0x5400100A, 0x54001010]:
+            # If WaveformBitsAllocated is > 8 then OW, otherwise may be
+            #   OB or OW, however not sure how to handle this.
+            #   See PS3.3 C.10.9.1.
+            if 'WaveformBitsAllocated' in ds:
+                if ds.WaveformBitsAllocated > 8:
+                    elem.VR = 'OW'
+
+        # 'US or OW': 0028,3006 LUTData
+        elif elem.tag in [0x00283006]:
+            if 'LUTDescriptor' in ds:
+                # First value in LUT Descriptor is how many values in
+                #   LUTData, if there's only one value then must be US
+                # As per PS3.3 C.11.1.1.1
+                if ds.LUTDescriptor[0] == 1:
+                    elem.VR = 'US'
+                    elem.value = convert_numbers(elem.value, is_little_endian,
+                                                 'H')
+                else:
+                    elem.VR = 'OW'
+
+        # 'OB or OW': 60xx,3000 OverlayData and dependent on Transfer Syntax
+        elif (elem.tag.group in range(0x6000, 0x601F, 2)
+              and elem.tag.elem == 0x3000):
+            # Implicit VR must be OW, explicit VR may be OB or OW
+            #   as per PS3.5 Section 8.1.2 and Annex A
+            if hasattr(ds, 'is_implicit_VR') and ds.is_implicit_VR:
+                elem.VR = 'OW'
+
+    return elem
