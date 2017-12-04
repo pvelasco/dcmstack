@@ -315,7 +315,8 @@ class DcmMetaExtension(Nifti1Extension):
                 raise InvalidExtensionError('Slice dim is None but per-slice '
                                             'meta data is present')
             elif cls_mult > 1:
-                for key, vals in cls_meta.iteritems():
+                #for key, vals in cls_meta.iteritems():
+                for key, vals in cls_meta.items():
                     n_vals = len(vals)
                     if n_vals != cls_mult:
                         msg = (('Incorrect number of values for key %s with '
@@ -431,7 +432,8 @@ class DcmMetaExtension(Nifti1Extension):
         for classes in self.get_valid_classes():
             filtered = []
             curr_dict = self.get_class_dict(classes)
-            for key, values in curr_dict.iteritems():
+            #for key, values in curr_dict.iteritems():
+            for key, values in curr_dict.items():
                 if filter_func(key, values):
                     filtered.append(key)
             for key in filtered:
@@ -845,7 +847,7 @@ class DcmMetaExtension(Nifti1Extension):
                 new_mult = self.shape[slice_dim]
         else:
             new_mult = 1
-        mult_fact = new_mult / curr_mult
+        mult_fact = new_mult // curr_mult
         if curr_mult == 1:
             values = [values]
 
@@ -1037,16 +1039,19 @@ class DcmMetaExtension(Nifti1Extension):
                     other._content[classes[0]][classes[1]] = {}
         missing_keys = list(set(self.get_keys()) - set(other.get_keys()))
         for other_classes in other.get_valid_classes():
-            other_keys = other.get_class_dict(other_classes).keys()
+            #other_keys = other.get_class_dict(other_classes).keys()
+            other_dict = other.get_class_dict(other_classes)
 
             #Treat missing keys as if they were in global const and have a value
             #of None
             if other_classes == ('global', 'const'):
-                other_keys += missing_keys
+                #other_keys += missing_keys
+                other_dict.update(missing_keys)
 
             #When possible, reclassify our meta data so it matches the other
             #classification
-            for key in other_keys:
+            #for key in other_keys:
+            for key in iter(other_dict):
                 local_classes = self.get_classification(key)
                 if local_classes != other_classes:
                     local_allow = self._preserving_changes[local_classes]
@@ -1064,7 +1069,8 @@ class DcmMetaExtension(Nifti1Extension):
                         self._change_class(key, best_dest)
 
             #Insert new meta data and further reclassify as necessary
-            for key in other_keys:
+            #for key in other_keys:
+            for key in iter(other_dict):
                 if dim == self.slice_dim:
                     self._insert_slice(key, other)
                 elif dim < 3:
