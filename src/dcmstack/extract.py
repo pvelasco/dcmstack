@@ -3,7 +3,12 @@ Extract meta data from a DICOM data set.
 """
 import struct, warnings
 from collections import namedtuple, defaultdict
-import dicom
+try:
+    # pydicom < 1.0                                                                                                                   
+    import dicom as dcm
+except:
+    # pydicom >= 1.0                                                                                                                  
+    import pydicom as dcm
 from dicom.datadict import keyword_for_tag
 from nibabel.nicom import csareader
 import sys
