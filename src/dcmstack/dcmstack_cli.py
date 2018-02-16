@@ -7,7 +7,12 @@ from __future__ import print_function
 
 import os, sys, argparse, string
 from glob import glob
-import dicom
+try:
+    # pydicom < 1.0                                                                                                                   
+    import dicom as dcm
+except:
+    # pydicom >= 1.0                                                                                                                  
+    import pydicom as dcm
 from . import dcmstack
 from .dcmstack import (parse_and_group, stack_group, DicomOrdering,
                        default_group_keys)
