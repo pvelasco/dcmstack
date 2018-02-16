@@ -3,7 +3,14 @@ Stack DICOM datasets into volumes. The contents of this module are imported
 into the package namespace.
 """
 from builtins import range
-import warnings, re, dicom
+import warnings, re
+try:
+    # pydicom < 1.0                                                                                                                   
+    import dicom as dcm
+except:
+    # pydicom >= 1.0                                                                                                                  
+    import pydicom as dcm
+
 from copy import deepcopy
 import nibabel as nb
 from nibabel.nifti1 import Nifti1Extensions
